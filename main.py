@@ -14,7 +14,8 @@ PORT = os.getenv("PORT", 8000)
 PROXY = os.getenv("PROXY", "")
 PASSWORD = os.getenv("PASSWORD", "ninomae")
 
-adapter = AIProAdapter(password=PASSWORD)
+
+adapter = AIProAdapter(password=PASSWORD, proxy=PROXY)
 print('adapter: ' + str(adapter))
 
 app = FastAPI()
