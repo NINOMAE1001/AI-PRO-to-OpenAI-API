@@ -10,10 +10,9 @@ from adapters.ai_pro_adapter import AIProAdapter
 from models import models_list
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
-PORT = os.getenv("PORT", 8000)
-PROXY = os.getenv("PROXY", "")
+PORT = int(os.getenv("PORT", 8000))
+PROXY = os.getenv("PROXY")
 PASSWORD = os.getenv("PASSWORD", "ninomae")
-
 
 adapter = AIProAdapter(password=PASSWORD, proxy=PROXY)
 print('adapter: ' + str(adapter))
