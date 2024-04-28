@@ -133,28 +133,18 @@ class AIProAdapter(BaseAdapter):
 
         headers = {
             'Host': 'chatpro.ai-pro.org',
-            'sec-ch-ua': '"Chromium";v="124", "Microsoft Edge";v="124", "Not-A.Brand";v="99"',
-            'content-type': 'application/json',
-            'dnt': '1',
-            'sec-ch-ua-mobile': '?0',
-            'authorization': 'Bearer undefined',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
-            'sec-ch-ua-platform': '"Windows"',
-            'accept': '*/*',
-            'origin': 'https://chatpro.ai-pro.org',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-dest': 'empty',
-            'referer': 'https://chatpro.ai-pro.org/chat/new',
-            'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
-            'sec-gpc': '1',
-            'priority': 'u=1, i',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer undefined',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+            'Accept': '*/*',
+            'Origin': 'https://chatpro.ai-pro.org',
+            'Referer': 'https://chatpro.ai-pro.org/chat/new',
         }
 
         api_url = 'https://chatpro.ai-pro.org/api/ask/' + json_data["endpoint"]
         last_text = ""
         last_incomplete_raw_text = ""
-        async with httpx.AsyncClient(http2=True, timeout=120.0, verify=False, proxies=self.proxies) as client:
+        async with httpx.AsyncClient(http2=False, timeout=120.0, verify=False, proxies=self.proxies) as client:
             if not stream:
                 response = await client.post(
                     url=api_url,
