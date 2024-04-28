@@ -41,68 +41,71 @@ class AIProAdapter(BaseAdapter):
             content_array.append(content)
         return "\n---------\n".join(content_array)
 
-    def convert_data(self, openai_params):
+    def convert_openai_data(self, openai_params):
         # openAI_models = ["gpt-3.5-turbo", "gpt-4-1106-preview", "gpt-4-pro-max"]
-        # google_models = ["chat-bison", "text-bison", "codechat-bison"]
 
         messages = openai_params["messages"]
         temperature = openai_params.get("temperature", 1)
         top_p = openai_params.get("top_p", 1)
         text = self.convert_messages_to_prompt(messages)
-
         model: str = openai_params["model"]
-        if model.startswith("gpt"):
-            return {
-                'sender': 'User',
-                'text': text,
-                'current': True,
-                'isCreatedByUser': True,
-                'parentMessageId': '00000000-0000-0000-0000-000000000000',
-                'conversationId': None,
-                'messageId': str(uuid.uuid4()),
-                'error': False,
-                'generation': '',
-                'responseMessageId': None,
-                'overrideParentMessageId': None,
-                'endpoint': "openAI",
-                'model': model,
-                'chatGptLabel': None,
-                'promptPrefix': None,
-                'temperature': temperature,
-                'top_p': top_p,
-                'presence_penalty': 0,
-                'frequency_penalty': 0,
-                'token': None,
-                'isContinued': False,
-                'isLimited': False,
-            }
-        elif model.startswith("google-"):
-            return {
-                'sender': 'User',
-                'text': text,
-                'current': True,
-                'isCreatedByUser': True,
-                'parentMessageId': '00000000-0000-0000-0000-000000000000',
-                'conversationId': None,
-                'messageId': str(uuid.uuid4()),
-                'error': False,
-                'generation': '',
-                'responseMessageId': None,
-                'overrideParentMessageId': None,
-                'endpoint': 'google',
-                'model': 'chat-bison',
-                'modelLabel': None,
-                'promptPrefix': None,
-                'temperature': temperature,
-                'maxOutputTokens': 1024,
-                'topP': 0.95,
-                'topK': 40,
-                'token': None,
-                'isContinued': False,
-                'isLimited': False,
-            }
-        else:
-            return None
+
+        return {
+            'sender': 'User',
+            'text': text,
+            'current': True,
+            'isCreatedByUser': True,
+            'parentMessageId': '00000000-0000-0000-0000-000000000000',
+            'conversationId': None,
+            'messageId': str(uuid.uuid4()),
+            'error': False,
+            'generation': '',
+            'responseMessageId': None,
+            'overrideParentMessageId': None,
+            'endpoint': "openAI",
+            'model': model,
+            'chatGptLabel': None,
+            'promptPrefix': None,
+            'temperature': temperature,
+            'top_p': top_p,
+            'presence_penalty': 0,
+            'frequency_penalty': 0,
+            'token': None,
+            'isContinued': False,
+            'isLimited': False,
+        }
+
+    def convert_google_data(self, openai_params, model):
+        # google_models = ["chat-bison", "text-bison", "codechat-bison"]
+
+        messages = openai_params["messages"]
+        temperature = openai_params.get("temperature", 1)
+        text = self.convert_messages_to_prompt(messages)
+
+        return {
+            'sender': 'User',
+            'text': text,
+            'current': True,
+            'isCreatedByUser': True,
+            'parentMessageId': '00000000-0000-0000-0000-000000000000',
+            'conversationId': None,
+            'messageId': str(uuid.uuid4()),
+            'error': False,
+            'generation': '',
+            'responseMessageId': None,
+            'overrideParentMessageId': None,
+            'endpoint': 'google',
+            'model': model,
+            'modelLabel': None,
+            'promptPrefix': None,
+            'temperature': temperature,
+            'maxOutputTokens': 1024,
+            'topP': 0.95,
+            'topK': 40,
+            'token': None,
+            'isContinued': False,
+            'isLimited': False,
+        }
 
     async def rate_limit(self):
         if self.last_time:
@@ -115,9 +118,15 @@ class AIProAdapter(BaseAdapter):
         openai_params = await request.json()
         headers = request.headers
         stream = openai_params.get("stream")
-        json_data = self.convert_data(openai_params)
+        model = openai_params.get("model")
+        google_model_prefix = "google-"
+        if model.startswith(google_model_prefix):
+            google_model = model.removeprefix(google_model_prefix)
+            json_data = self.convert_google_data(openai_params, google_model)
+        else:
+            json_data = self.convert_openai_data(openai_params)
         print(json_data)
-        model = json_data["model"]
+
         api_key = self.get_api_key(headers)
         if api_key != self.password:
             raise Exception(f"Error: 密钥无效")
@@ -154,12 +163,12 @@ class AIProAdapter(BaseAdapter):
                 )
                 if response.is_error:
                     raise Exception(f"Error: {response.status_code}")
-                pattern = r'"sender":"ChatGPT","text":"([^"]+)"'
+                pattern = r'"sender":"(ChatGPT|PaLM2)","text":"([^"]+)"'
 
                 match = re.search(pattern, response.text)
 
                 if match:
-                    text = match.group(1)
+                    text = match.group(2)
                     print(text)
                     yield self.to_openai_response(model=model, content=text)
                 else:
