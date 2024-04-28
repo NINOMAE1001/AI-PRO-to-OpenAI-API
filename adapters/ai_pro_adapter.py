@@ -16,10 +16,13 @@ class AIProAdapter(BaseAdapter):
     def __init__(self, password, proxy):
         self.password = password
         self.last_time = None
-        self.proxies = {
-            'http://': proxy,
-            'https://': proxy,
-        }
+        if proxy:
+            self.proxies = {
+                'http://': proxy,
+                'https://': proxy,
+            }
+        else:
+            self.proxies = None
 
     def get_api_key(self, headers):
         auth_header = headers.get("authorization", None)
