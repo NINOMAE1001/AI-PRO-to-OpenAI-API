@@ -13,7 +13,7 @@ MIN_ELAPSED_TIME = 0.02
 
 
 class AIProAdapter(BaseAdapter):
-    def __init__(self, password, proxy):
+    def __init__(self, password, proxy, api_proxy):
         self.password = password
         self.last_time = None
         if proxy:
@@ -23,6 +23,11 @@ class AIProAdapter(BaseAdapter):
             }
         else:
             self.proxies = None
+
+        if api_proxy:
+            self.api_base = api_proxy
+        else:
+            self.api_base = 'https://chatpro.ai-pro.org'
 
     def get_api_key(self, headers):
         auth_header = headers.get("authorization", None)
@@ -141,7 +146,7 @@ class AIProAdapter(BaseAdapter):
             'Referer': 'https://chatpro.ai-pro.org/chat/new',
         }
 
-        api_url = 'https://chatpro.ai-pro.org/api/ask/' + json_data["endpoint"]
+        api_url = self.api_base + '/api/ask/' + json_data["endpoint"]
         last_text = ""
         last_incomplete_raw_text = ""
         async with httpx.AsyncClient(http2=False, timeout=120.0, verify=False, proxies=self.proxies) as client:

@@ -13,8 +13,9 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
 PORT = int(os.getenv("PORT", 8000))
 PROXY = os.getenv("PROXY")
 PASSWORD = os.getenv("PASSWORD", "ninomae")
+API_PROXY = os.getenv("API_PROXY")
 
-adapter = AIProAdapter(password=PASSWORD, proxy=PROXY)
+adapter = AIProAdapter(password=PASSWORD, proxy=PROXY, api_proxy=API_PROXY)
 print('adapter: ' + str(adapter))
 
 app = FastAPI()
