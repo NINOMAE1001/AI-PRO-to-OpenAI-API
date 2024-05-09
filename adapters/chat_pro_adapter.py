@@ -9,10 +9,8 @@ from fastapi import Request
 
 from adapters.base_adapter import BaseAdapter
 
-MIN_ELAPSED_TIME = 0.02
 
-
-class AIProAdapter(BaseAdapter):
+class ChatProAdapter(BaseAdapter):
     def __init__(self, password, proxy, api_proxy):
         self.password = password
         self.last_time = None
@@ -29,17 +27,8 @@ class AIProAdapter(BaseAdapter):
         else:
             self.api_base = 'https://chatpro.ai-pro.org'
 
-    def get_api_key(self, headers):
-        auth_header = headers.get("authorization", None)
-        if auth_header:
-            auth_header_array = auth_header.split(" ")
-            if len(auth_header_array) == 1:
-                return ""
-            return auth_header_array[1]
-        else:
-            return ""
-
-    def convert_messages_to_prompt(self, messages):
+    @staticmethod
+    def convert_messages_to_prompt(messages):
         content_array = []
         for message in messages:
             content = message["content"]
@@ -112,13 +101,6 @@ class AIProAdapter(BaseAdapter):
             'isLimited': False,
         }
 
-    async def rate_limit(self):
-        if self.last_time:
-            elapsed_time = time.time() - self.last_time
-            if elapsed_time < MIN_ELAPSED_TIME:
-                await asyncio.sleep(MIN_ELAPSED_TIME - elapsed_time)
-        self.last_time = time.time()
-
     async def chat(self, request: Request):
         openai_params = await request.json()
         headers = request.headers
@@ -132,7 +114,7 @@ class AIProAdapter(BaseAdapter):
             json_data = self.convert_openai_data(openai_params)
         print(json_data)
 
-        api_key = self.get_api_key(headers)
+        api_key = self.get_request_api_key(headers)
         if api_key != self.password:
             raise Exception(f"Error: 密钥无效")
 
@@ -146,9 +128,10 @@ class AIProAdapter(BaseAdapter):
             'Referer': 'https://chatpro.ai-pro.org/chat/new',
         }
 
-        api_url = self.api_base + '/api/ask/' + json_data["endpoint"]
+        api_url = f'{self.api_base}/api/ask/{json_data["endpoint"]}'
         last_text = ""
         last_incomplete_raw_text = ""
+        last_time = time.time()
         async with httpx.AsyncClient(http2=False, timeout=120.0, verify=False, proxies=self.proxies) as client:
             if not stream:
                 response = await client.post(
@@ -158,7 +141,10 @@ class AIProAdapter(BaseAdapter):
                 )
                 if response.is_error:
                     raise Exception(f"Error: {response.status_code}")
+
                 pattern = r'"sender":"(ChatGPT|PaLM2)","text":"([^"]+)"'
+
+                print(response.text)
 
                 match = re.search(pattern, response.text)
 
@@ -178,17 +164,18 @@ class AIProAdapter(BaseAdapter):
                     if response.is_error:
                         raise Exception(f"Error: {response.status_code}")
 
+                    print(response.headers)
                     yield self.to_openai_response_stream_begin(model=model)
                     async for raw_data in response.aiter_text():
                         if raw_data:
                             print('raw_data: ' + raw_data)
                             try:
                                 if last_incomplete_raw_text != "":
-                                    text = self.take(last_incomplete_raw_text + raw_data)
+                                    text = self.take_text(last_incomplete_raw_text + raw_data)
                                 else:
-                                    text = self.take(raw_data)
-                            except Exception as ex:
-                                print("incomplete!!! " + str(ex))
+                                    text = self.take_text(raw_data)
+                            except json.JSONDecodeError as ex:
+                                print("incomplete!!! ", ex)
                                 last_incomplete_raw_text += raw_data
                                 print("last_incomplete_raw_text: " + last_incomplete_raw_text)
                                 continue
@@ -202,46 +189,30 @@ class AIProAdapter(BaseAdapter):
                             last_text = text
 
                             yield self.to_openai_response_stream(model=model, content=new_text)
-                            await self.rate_limit()
+                            await self.rate_limit_sleep_async(last_time)
+                            last_time = time.time()
 
                     await asyncio.sleep(1)
                     yield self.to_openai_response_stream_end(model=model)
                     yield "[DONE]"
 
-    def take(self, raw_data: str) -> str:
-        json_data = None
+    @staticmethod
+    def take_text(raw_data: str) -> str:
+        text = ""
+        lines = raw_data.split("\n\n")
 
-        parent_lines = raw_data.split("event: message\n")
-        for parent_line in parent_lines:
-            if not parent_line:
+        for line in lines:
+            if not line:
                 continue
 
-            # 分割数据到行
-            lines = parent_line.split("\n")
+            print(line)
+            if line.startswith("event: message"):
+                json_data = json.loads(line.lstrip("event: message\ndata:"))
 
-            # 解析行
-            for line in lines:
-                if not line:
-                    continue
+                if json_data.get("message") == True:
+                    text = json_data["text"]
 
-                if line.startswith('data:'):
-                    json_data = line.split(":", 1)[1]
+                if json_data.get("final") == True:
+                    text = json_data["responseMessage"]["text"]
 
-            # 确保我们获取了需要的数据
-            if json_data:
-                # 将字符串转换为JSON
-                message_data = json.loads(json_data)
-
-                # 打印结果
-                print(f"message_data: {message_data}")
-
-                if message_data.get("message") == True:
-                    return message_data["text"]
-
-                if message_data.get("final") == True:
-                    return message_data["responseMessage"]["text"]
-
-                return ""
-            else:
-                print("数据不完整或事件类型不匹配。")
-                return ""
+        return text

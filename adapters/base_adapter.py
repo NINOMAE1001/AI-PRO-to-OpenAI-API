@@ -1,9 +1,11 @@
+import asyncio
 import time
 from util import num_tokens_from_string, generate_random_string
 
 
 class BaseAdapter:
-    def to_openai_response_stream_begin(self, model):
+    @staticmethod
+    def to_openai_response_stream_begin(model):
         return {
             "id": f"chatcmpl-{generate_random_string(29)}",
             "object": "chat.completion.chunk",
@@ -21,7 +23,8 @@ class BaseAdapter:
             ]
         }
 
-    def to_openai_response_stream(self, model, content, role=None):
+    @staticmethod
+    def to_openai_response_stream(model, content, role=None):
         openai_response = {
             "id": f"chatcmpl-{generate_random_string(29)}",
             "object": "chat.completion.chunk",
@@ -43,7 +46,8 @@ class BaseAdapter:
 
         return openai_response
 
-    def to_openai_response_stream_end(self, model):
+    @staticmethod
+    def to_openai_response_stream_end(model):
         return {
             "choices": [
                 {
@@ -58,7 +62,8 @@ class BaseAdapter:
             "object": "chat.completion.chunk"
         }
 
-    def to_openai_response(self, model, content):
+    @staticmethod
+    def to_openai_response(model, content):
         completion_tokens = num_tokens_from_string(content)
         openai_response = {
             "id": f"chatcmpl-{generate_random_string(29)}",
@@ -83,3 +88,21 @@ class BaseAdapter:
         }
 
         return openai_response
+
+    @staticmethod
+    async def rate_limit_sleep_async(last_time, min_elapsed_time=0.02):
+        if last_time:
+            elapsed_time = time.time() - last_time
+            if elapsed_time < min_elapsed_time:
+                await asyncio.sleep(min_elapsed_time - elapsed_time)
+
+    @staticmethod
+    def get_request_api_key(headers):
+        auth_header = headers.get("authorization", None)
+        if auth_header:
+            auth_header_array = auth_header.split(" ")
+            if len(auth_header_array) == 1:
+                return ""
+            return auth_header_array[1]
+        else:
+            return ""
