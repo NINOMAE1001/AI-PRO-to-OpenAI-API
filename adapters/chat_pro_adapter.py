@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 import time
 import uuid
 
@@ -8,6 +7,7 @@ import httpx
 from fastapi import Request
 
 from adapters.base_adapter import BaseAdapter
+from event_stream_resolver import EventStreamResolver
 
 
 class ChatProAdapter(BaseAdapter):
@@ -112,7 +112,6 @@ class ChatProAdapter(BaseAdapter):
             json_data = self.convert_google_data(openai_params, google_model)
         else:
             json_data = self.convert_openai_data(openai_params)
-        print(json_data)
 
         api_key = self.get_request_api_key(headers)
         if api_key != self.password:
@@ -130,8 +129,8 @@ class ChatProAdapter(BaseAdapter):
 
         api_url = f'{self.api_base}/api/ask/{json_data["endpoint"]}'
         last_text = ""
-        last_incomplete_raw_text = ""
         last_time = time.time()
+        event_stream_resolver = EventStreamResolver()
         async with httpx.AsyncClient(http2=False, timeout=120.0, verify=False, proxies=self.proxies) as client:
             if not stream:
                 response = await client.post(
@@ -142,18 +141,17 @@ class ChatProAdapter(BaseAdapter):
                 if response.is_error:
                     raise Exception(f"Error: {response.status_code}")
 
-                pattern = r'"sender":"(ChatGPT|PaLM2)","text":"([^"]+)"'
+                raw_data = response.text
+                event_stream_resolver.buffer(raw_data)
+                for message in event_stream_resolver.get_messages():
+                    data = self.get_data(message)
+                    if data.get("final"):
+                        text = data["responseMessage"]["text"]
 
-                print(response.text)
-
-                match = re.search(pattern, response.text)
-
-                if match:
-                    text = match.group(2)
-                    print(text)
+                if text:
                     yield self.to_openai_response(model=model, content=text)
                 else:
-                    raise Exception(f"No match found")
+                    raise Exception(f"no result")
             else:
                 async with client.stream(
                         method="POST",
@@ -164,55 +162,42 @@ class ChatProAdapter(BaseAdapter):
                     if response.is_error:
                         raise Exception(f"Error: {response.status_code}")
 
-                    print(response.headers)
                     yield self.to_openai_response_stream_begin(model=model)
                     async for raw_data in response.aiter_text():
                         if raw_data:
-                            print('raw_data: ' + raw_data)
-                            try:
-                                if last_incomplete_raw_text != "":
-                                    text = self.take_text(last_incomplete_raw_text + raw_data)
-                                else:
-                                    text = self.take_text(raw_data)
-                            except json.JSONDecodeError as ex:
-                                print("incomplete!!! ", ex)
-                                last_incomplete_raw_text += raw_data
-                                print("last_incomplete_raw_text: " + last_incomplete_raw_text)
-                                continue
+                            event_stream_resolver.buffer(raw_data)
+                            for message in event_stream_resolver.get_messages():
+                                try:
+                                    data = self.get_data(message)
+                                    text = self.take_text(data)
+                                except json.JSONDecodeError as ex:
+                                    print("incomplete!!! ", ex)
+                                    continue
 
-                            last_incomplete_raw_text = ""
-                            if text == "":
-                                continue
-                            print('take text: ' + text)
+                                if text == "":
+                                    continue
 
-                            new_text = text[len(last_text):]
-                            last_text = text
+                                new_text = text[len(last_text):]
+                                last_text = text
 
-                            yield self.to_openai_response_stream(model=model, content=new_text)
-                            await self.rate_limit_sleep_async(last_time)
-                            last_time = time.time()
+                                yield self.to_openai_response_stream(model=model, content=new_text)
+                                await self.rate_limit_sleep_async(last_time)
+                                last_time = time.time()
 
                     await asyncio.sleep(1)
                     yield self.to_openai_response_stream_end(model=model)
                     yield "[DONE]"
 
     @staticmethod
-    def take_text(raw_data: str) -> str:
-        text = ""
-        lines = raw_data.split("\n\n")
+    def get_data(message: str) -> json:
+        if message.startswith("event: message"):
+            return json.loads(message.lstrip("event: message\ndata:"))
+        return None
 
-        for line in lines:
-            if not line:
-                continue
-
-            print(line)
-            if line.startswith("event: message"):
-                json_data = json.loads(line.lstrip("event: message\ndata:"))
-
-                if json_data.get("message") == True:
-                    text = json_data["text"]
-
-                if json_data.get("final") == True:
-                    text = json_data["responseMessage"]["text"]
-
-        return text
+    @staticmethod
+    def take_text(data: json) -> str:
+        if data.get("message") == True:
+            return data["text"]
+        elif data.get("final"):
+            return data["responseMessage"]["text"]
+        return ""
